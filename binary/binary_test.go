@@ -1,4 +1,4 @@
-package gpkg
+package binary
 
 import (
 	"bytes"
@@ -7,15 +7,13 @@ import (
 	"io"
 	"reflect"
 	"testing"
-
-	"photofield/geo/gpkg"
 )
 
 func TestRead(t *testing.T) {
 	tests := []struct {
 		name    string
 		data    []byte
-		want    *gpkg.Header
+		want    *Header
 		wantErr error
 	}{
 		{
@@ -25,17 +23,38 @@ func TestRead(t *testing.T) {
 				0x00,                   // version
 				0x00,                   // flags
 				0x00, 0x00, 0x00, 0x01, // srs_id
-				0x00, // envelope contents indicator code
 			},
-			want: &gpkg.Header{
-				HeaderTop: gpkg.HeaderTop{
+			want: &Header{
+				HeaderTop: HeaderTop{
 					Magic:   [2]byte{0x47, 0x50},
 					Version: 0,
 					Flags:   0,
 				},
-				HeaderSrs: gpkg.HeaderSrs{
+				HeaderSrs: HeaderSrs{
 					SrsId: 1,
 				},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "extended type",
+			data: []byte{
+				0x47, 0x50, // magic
+				0x00,                   // version
+				0b0010_0000,            // flags
+				0x00, 0x00, 0x00, 0x01, // srs_id
+				'T', 'W', 'K', 'B',
+			},
+			want: &Header{
+				HeaderTop: HeaderTop{
+					Magic:   [2]byte{0x47, 0x50},
+					Version: 0,
+					Flags:   0b0010_0000,
+				},
+				HeaderSrs: HeaderSrs{
+					SrsId: 1,
+				},
+				ExtensionCode: ExtensionTWKB,
 			},
 			wantErr: nil,
 		},
@@ -51,34 +70,11 @@ func TestRead(t *testing.T) {
 			name: "invalid magic",
 			data: []byte{
 				0x12, 0x34, // invalid magic
-				0x00,                   // version
-				0x00,                   // flags
-				0x00, 0x00, 0x00, 0x01, // srs_id
+				0x00, // version
+				0x00, // flags
 			},
 			want:    nil,
-			wantErr: gpkg.ErrInvalidMagic,
-		},
-		{
-			name: "unsupported type",
-			data: []byte{
-				0x47, 0x50, // magic
-				0x00,                   // version
-				0b0010_0000,            // flags (extended type)
-				0x00, 0x00, 0x00, 0x01, // srs_id
-			},
-			want:    nil,
-			wantErr: gpkg.ErrUnsupportedType,
-		},
-		{
-			name: "unsupported version",
-			data: []byte{
-				0x47, 0x50, // magic
-				0x01,                   // unsupported version
-				0x00,                   // flags
-				0x00, 0x00, 0x00, 0x01, // srs_id
-			},
-			want:    nil,
-			wantErr: gpkg.ErrUnsupportedVersion,
+			wantErr: ErrInvalidMagic,
 		},
 		{
 			name: "short buffer",
@@ -96,7 +92,10 @@ func TestRead(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := bytes.NewReader(tt.data)
-			got, err := gpkg.Read(r)
+			got, err := Read(r)
+			if r.Len() != 0 {
+				t.Errorf("Read() did not read all bytes")
+			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Read() = %v, want %v", got, tt.want)
 			}
@@ -110,19 +109,19 @@ func TestRead(t *testing.T) {
 func TestBinary_Write(t *testing.T) {
 	tests := []struct {
 		name    string
-		b       *gpkg.Header
+		b       *Header
 		want    []byte
 		wantErr bool
 	}{
 		{
 			name: "valid binary",
-			b: &gpkg.Header{
-				HeaderTop: gpkg.HeaderTop{
+			b: &Header{
+				HeaderTop: HeaderTop{
 					Magic:   [2]byte{0x47, 0x50},
 					Version: 0,
 					Flags:   0,
 				},
-				HeaderSrs: gpkg.HeaderSrs{
+				HeaderSrs: HeaderSrs{
 					SrsId: 15,
 				},
 			},
@@ -135,15 +134,57 @@ func TestBinary_Write(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "extended type",
+			b: &Header{
+				HeaderTop: HeaderTop{
+					Magic:   [2]byte{0x47, 0x50},
+					Version: 0,
+					Flags:   0b0010_0000,
+				},
+				HeaderSrs: HeaderSrs{
+					SrsId: 15,
+				},
+				ExtensionCode: []byte{
+					'T', 'W', 'K', 'B',
+				},
+			},
+			want: []byte{
+				0x47, 0x50, // magic
+				0x00,                   // version
+				0b0010_0000,            // flags
+				0x00, 0x00, 0x00, 0x0F, // srs_id
+				'T', 'W', 'K', 'B',
+			},
+			wantErr: false,
+		},
+		{
 			name: "unsupported envelope",
-			b: &gpkg.Header{
-				HeaderTop: gpkg.HeaderTop{
+			b: &Header{
+				HeaderTop: HeaderTop{
 					Magic:   [2]byte{0x47, 0x50},
 					Version: 0,
 					Flags:   0b0000_0010,
 				},
-				HeaderSrs: gpkg.HeaderSrs{
+				HeaderSrs: HeaderSrs{
 					SrsId: 1,
+				},
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "invalid extension code length",
+			b: &Header{
+				HeaderTop: HeaderTop{
+					Magic:   [2]byte{0x47, 0x50},
+					Version: 0,
+					Flags:   0b0010_0000,
+				},
+				HeaderSrs: HeaderSrs{
+					SrsId: 1,
+				},
+				ExtensionCode: []byte{
+					'T', 'W', 'K',
 				},
 			},
 			want:    nil,
@@ -169,13 +210,13 @@ func TestBinary_Write(t *testing.T) {
 }
 
 func TestBinaryReadWrite(t *testing.T) {
-	binary := &gpkg.Header{
-		HeaderTop: gpkg.HeaderTop{
+	binary := &Header{
+		HeaderTop: HeaderTop{
 			Magic:   [2]byte{0x47, 0x50},
 			Version: 0,
 			Flags:   0,
 		},
-		HeaderSrs: gpkg.HeaderSrs{
+		HeaderSrs: HeaderSrs{
 			SrsId: 4326,
 		},
 	}
@@ -186,7 +227,7 @@ func TestBinaryReadWrite(t *testing.T) {
 		t.Fatalf("unexpected error writing binary: %v", err)
 	}
 
-	readBinary, err := gpkg.Read(&buf)
+	readBinary, err := Read(&buf)
 	if err != nil {
 		t.Fatalf("unexpected error reading binary: %v", err)
 	}
@@ -199,22 +240,22 @@ func TestBinaryReadWrite(t *testing.T) {
 func TestHeaderTop_Type(t *testing.T) {
 	tests := []struct {
 		name string
-		h    gpkg.HeaderTop
-		want gpkg.Type
+		h    HeaderTop
+		want Type
 	}{
 		{
 			name: "standard type",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0000_0000,
 			},
-			want: gpkg.StandardType,
+			want: StandardType,
 		},
 		{
 			name: "extended type",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0010_0000,
 			},
-			want: gpkg.ExtendedType,
+			want: ExtendedType,
 		},
 	}
 
@@ -230,27 +271,27 @@ func TestHeaderTop_Type(t *testing.T) {
 func TestHeaderTop_SetType(t *testing.T) {
 	tests := []struct {
 		name string
-		h    gpkg.HeaderTop
-		t    gpkg.Type
-		want gpkg.HeaderTop
+		h    HeaderTop
+		t    Type
+		want HeaderTop
 	}{
 		{
 			name: "set standard type",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0010_0000,
 			},
-			t: gpkg.StandardType,
-			want: gpkg.HeaderTop{
+			t: StandardType,
+			want: HeaderTop{
 				Flags: 0b0000_0000,
 			},
 		},
 		{
 			name: "set extended type",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0000_0000,
 			},
-			t: gpkg.ExtendedType,
-			want: gpkg.HeaderTop{
+			t: ExtendedType,
+			want: HeaderTop{
 				Flags: 0b0010_0000,
 			},
 		},
@@ -269,32 +310,32 @@ func TestHeaderTop_SetType(t *testing.T) {
 func TestEnvelopeContentsIndicatorCode_String(t *testing.T) {
 	tests := []struct {
 		name string
-		c    gpkg.EnvelopeContentsIndicatorCode
+		c    EnvelopeContentsIndicatorCode
 		want string
 	}{
 		{
 			name: "no envelope",
-			c:    gpkg.NoEnvelope,
+			c:    NoEnvelope,
 			want: "no envelope, 0 bytes",
 		},
 		{
 			name: "XY envelope",
-			c:    gpkg.XY,
+			c:    XY,
 			want: "envelope is [minx, maxx, miny, maxy], 32 bytes",
 		},
 		{
 			name: "XYZ envelope",
-			c:    gpkg.XYZ,
+			c:    XYZ,
 			want: "envelope is [minx, maxx, miny, maxy, minz, maxz], 48 bytes",
 		},
 		{
 			name: "XYM envelope",
-			c:    gpkg.XYM,
+			c:    XYM,
 			want: "envelope is [minx, maxx, miny, maxy, minm, maxm], 48 bytes",
 		},
 		{
 			name: "XYZM envelope",
-			c:    gpkg.XYZM,
+			c:    XYZM,
 			want: "envelope is [minx, maxx, miny, maxy, minz, maxz, minm, maxm], 64 bytes",
 		},
 		{
@@ -316,32 +357,32 @@ func TestEnvelopeContentsIndicatorCode_String(t *testing.T) {
 func TestEnvelopeContentsIndicatorCode_Size(t *testing.T) {
 	tests := []struct {
 		name string
-		c    gpkg.EnvelopeContentsIndicatorCode
+		c    EnvelopeContentsIndicatorCode
 		want int
 	}{
 		{
 			name: "no envelope",
-			c:    gpkg.NoEnvelope,
+			c:    NoEnvelope,
 			want: 0,
 		},
 		{
 			name: "XY envelope",
-			c:    gpkg.XY,
+			c:    XY,
 			want: 32,
 		},
 		{
 			name: "XYZ envelope",
-			c:    gpkg.XYZ,
+			c:    XYZ,
 			want: 48,
 		},
 		{
 			name: "XYM envelope",
-			c:    gpkg.XYM,
+			c:    XYM,
 			want: 48,
 		},
 		{
 			name: "XYZM envelope",
-			c:    gpkg.XYZM,
+			c:    XYZM,
 			want: 64,
 		},
 		{
@@ -363,43 +404,43 @@ func TestEnvelopeContentsIndicatorCode_Size(t *testing.T) {
 func TestHeaderTop_EnvelopeContentsIndicatorCode(t *testing.T) {
 	tests := []struct {
 		name string
-		h    gpkg.HeaderTop
-		want gpkg.EnvelopeContentsIndicatorCode
+		h    HeaderTop
+		want EnvelopeContentsIndicatorCode
 	}{
 		{
 			name: "no envelope",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0000_0000,
 			},
-			want: gpkg.NoEnvelope,
+			want: NoEnvelope,
 		},
 		{
 			name: "XY envelope",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0000_0010,
 			},
-			want: gpkg.XY,
+			want: XY,
 		},
 		{
 			name: "XYZ envelope",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0000_0100,
 			},
-			want: gpkg.XYZ,
+			want: XYZ,
 		},
 		{
 			name: "XYM envelope",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0000_0110,
 			},
-			want: gpkg.XYM,
+			want: XYM,
 		},
 		{
 			name: "XYZM envelope",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0000_1000,
 			},
-			want: gpkg.XYZM,
+			want: XYZM,
 		},
 	}
 
@@ -415,57 +456,57 @@ func TestHeaderTop_EnvelopeContentsIndicatorCode(t *testing.T) {
 func TestHeaderTop_SetEnvelopeContentsIndicatorCode(t *testing.T) {
 	tests := []struct {
 		name string
-		h    gpkg.HeaderTop
-		c    gpkg.EnvelopeContentsIndicatorCode
-		want gpkg.HeaderTop
+		h    HeaderTop
+		c    EnvelopeContentsIndicatorCode
+		want HeaderTop
 	}{
 		{
 			name: "set no envelope",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0000_0010,
 			},
-			c: gpkg.NoEnvelope,
-			want: gpkg.HeaderTop{
+			c: NoEnvelope,
+			want: HeaderTop{
 				Flags: 0b0000_0000,
 			},
 		},
 		{
 			name: "set XY envelope",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0000_0000,
 			},
-			c: gpkg.XY,
-			want: gpkg.HeaderTop{
+			c: XY,
+			want: HeaderTop{
 				Flags: 0b0000_0010,
 			},
 		},
 		{
 			name: "set XYZ envelope",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0000_0000,
 			},
-			c: gpkg.XYZ,
-			want: gpkg.HeaderTop{
+			c: XYZ,
+			want: HeaderTop{
 				Flags: 0b0000_0100,
 			},
 		},
 		{
 			name: "set XYM envelope",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0000_0000,
 			},
-			c: gpkg.XYM,
-			want: gpkg.HeaderTop{
+			c: XYM,
+			want: HeaderTop{
 				Flags: 0b0000_0110,
 			},
 		},
 		{
 			name: "set XYZM envelope",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0000_0000,
 			},
-			c: gpkg.XYZM,
-			want: gpkg.HeaderTop{
+			c: XYZM,
+			want: HeaderTop{
 				Flags: 0b0000_1000,
 			},
 		},
@@ -484,19 +525,19 @@ func TestHeaderTop_SetEnvelopeContentsIndicatorCode(t *testing.T) {
 func TestHeaderTop_ByteOrder(t *testing.T) {
 	tests := []struct {
 		name string
-		h    gpkg.HeaderTop
+		h    HeaderTop
 		want binary.ByteOrder
 	}{
 		{
 			name: "big endian",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0000_0000,
 			},
 			want: binary.BigEndian,
 		},
 		{
 			name: "little endian",
-			h: gpkg.HeaderTop{
+			h: HeaderTop{
 				Flags: 0b0000_0001,
 			},
 			want: binary.LittleEndian,

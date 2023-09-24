@@ -1,4 +1,4 @@
-package gpkg
+package binary
 
 import (
 	"encoding/binary"
@@ -9,11 +9,13 @@ import (
 
 var ErrInvalidMagic = errors.New("invalid magic")
 
-// See http://www.geopackage.org/spec/#gpb_data_blob_format
+var ExtensionTWKB = []byte{'T', 'W', 'K', 'B'}
 
+// See http://www.geopackage.org/spec/#gpb_data_blob_format
 type Header struct {
 	HeaderTop
 	HeaderSrs
+	ExtensionCode []byte
 }
 
 func Read(r io.Reader) (*Header, error) {
@@ -23,7 +25,6 @@ func Read(r io.Reader) (*Header, error) {
 		return nil, err
 	}
 	if b.Magic != [2]byte{0x47, 0x50} {
-		println(b.Magic[0], b.Magic[1])
 		return nil, ErrInvalidMagic
 	}
 	bo := b.ByteOrder()
@@ -39,12 +40,25 @@ func Read(r io.Reader) (*Header, error) {
 	if n != envsize {
 		return nil, io.EOF
 	}
+	if b.Type() == ExtendedType {
+		b.ExtensionCode = make([]byte, 4)
+		n, err := r.Read(b.ExtensionCode)
+		if err != nil {
+			return nil, err
+		}
+		if n != 4 {
+			return nil, io.EOF
+		}
+	}
 	return b, nil
 }
 
 func (b *Header) Write(w io.Writer) error {
 	if b.EnvelopeContentsIndicatorCode() != NoEnvelope {
 		return fmt.Errorf("unsupported envelope %s", b.EnvelopeContentsIndicatorCode().String())
+	}
+	if b.Type() == ExtendedType && len(b.ExtensionCode) != 4 {
+		return fmt.Errorf("invalid extension code length %d", len(b.ExtensionCode))
 	}
 	err := binary.Write(w, binary.LittleEndian, &b.HeaderTop)
 	if err != nil {
@@ -53,6 +67,15 @@ func (b *Header) Write(w io.Writer) error {
 	err = binary.Write(w, b.ByteOrder(), &b.HeaderSrs)
 	if err != nil {
 		return err
+	}
+	if b.Type() == ExtendedType {
+		n, err := w.Write(b.ExtensionCode)
+		if n != 4 {
+			return io.EOF
+		}
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -76,7 +99,7 @@ const (
 )
 
 func (b *Header) String() string {
-	return fmt.Sprintf("Binary{HeaderTop: %s, HeaderSrs: %s}", b.HeaderTop.String(), b.HeaderSrs.String())
+	return fmt.Sprintf("Header{HeaderTop: %s, HeaderSrs: %s, ExtensionCode: %v}", b.HeaderTop.String(), b.HeaderSrs.String(), b.ExtensionCode)
 }
 
 func (h *HeaderTop) String() string {

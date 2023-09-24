@@ -1,0 +1,27 @@
+goos: windows
+goarch: amd64
+pkg: github.com/smilyorg/tinygpkg/bench
+cpu: Intel(R) Core(TM) i7-5820K CPU @ 3.30GHz
+                                    │      rgeo       │                 tinygpkg                  │
+                                    │     sec/op      │     sec/op      vs base                   │
+Setup/dataset=countries-12               93.78m ± 11%     14.05m ± 10%     -85.01% (p=0.000 n=10)
+Setup/dataset=cities-12               13793.15m ±  5%     12.63m ±  3%     -99.91% (p=0.000 n=10)
+ReverseGeocode/dataset=countries-12      1.203µ ± 15%    87.278µ ±  9%   +7158.05% (p=0.000 n=10)
+ReverseGeocode/dataset=cities-12         517.0n ± 10%   63238.5n ±  6%  +12131.82% (p=0.000 n=10)
+geomean                                  947.0µ           995.0µ            +5.07%
+
+                                    │       rgeo        │                tinygpkg                 │
+                                    │       B/op        │     B/op      vs base                   │
+Setup/dataset=countries-12              21685.49Ki ± 0%   12.64Ki ± 0%     -99.94% (p=0.000 n=10)
+Setup/dataset=cities-12               5953295.66Ki ± 0%   12.53Ki ± 0%    -100.00% (p=0.000 n=10)
+ReverseGeocode/dataset=countries-12          176.0 ± 0%   21513.0 ± 0%  +12123.30% (p=0.000 n=10)
+ReverseGeocode/dataset=cities-12             16.00 ± 0%   3546.00 ± 0%  +22062.50% (p=0.000 n=10)
+geomean                                    136.5Ki        10.36Ki          -92.41%
+
+                                    │      rgeo       │               tinygpkg                │
+                                    │    allocs/op    │  allocs/op   vs base                  │
+Setup/dataset=countries-12              269620.0 ± 0%    404.0 ± 0%    -99.85% (p=0.000 n=10)
+Setup/dataset=cities-12               42744933.0 ± 0%    400.0 ± 0%   -100.00% (p=0.000 n=10)
+ReverseGeocode/dataset=countries-12        2.000 ± 0%   98.000 ± 0%  +4800.00% (p=0.000 n=10)
+ReverseGeocode/dataset=cities-12           1.000 ± 0%   29.000 ± 0%  +2800.00% (p=0.000 n=10)
+geomean                                   2.191k         146.4         -93.32%

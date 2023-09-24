@@ -1,0 +1,23 @@
+# Run all tests
+test:
+  go test ./...
+
+# Run benchmarks and save results to results/bench.txt
+bench:
+  go test -run=none -bench '.*' -benchmem -count 10 -timeout 20m | tee results/bench.txt
+
+# Run benchstat on results/bench.txt and save results to results/benchstat.txt
+stat:
+  benchstat -col /lib results/bench.txt | tee results/benchstat.txt
+
+# Compile and compute package size comparison
+size:
+  go build ./examples/rgeo-bundled
+  go tool nm -size -sort size ./rgeo-bundled.exe | go-binsize-treemap > results/rgeo-bundled-size.svg
+
+  go build ./examples/rgeo-empty
+  go tool nm -size -sort size ./rgeo-empty.exe | go-binsize-treemap > results/rgeo-empty-size.svg
+  
+  go build ./examples/tinygpkg
+  go tool nm -size -sort size ./tinygpkg.exe | go-binsize-treemap > results/tinygpkg-size.svg
+  
