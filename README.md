@@ -11,9 +11,11 @@
     Go library for local, small, fast reverse geocoding with <a href="https://github.com/TWKB/Specification/blob/master/twkb.md">TWKB</a> & <a href="http://www.geopackage.org/">GeoPackage</a>.
     <br />
     <br />
-    <a href="https://github.com/SmilyOrg/tinygpkg/issues">Report Bug</a>
+    <a href="https://github.com/SmilyOrg/tinygpkg-data">📥 Get Datasets</a>
     ·
-    <a href="https://github.com/SmilyOrg/tinygpkg/issues">Request Feature</a>
+    <a href="https://github.com/SmilyOrg/tinygpkg/issues">🐛 Report Bug</a>
+    ·
+    <a href="https://github.com/SmilyOrg/tinygpkg/issues">💡 Request Feature</a>
   </p>
 </p>
 
