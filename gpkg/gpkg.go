@@ -120,7 +120,15 @@ func (g *GeoPackage) autoconfTable() error {
 }
 
 func (g *GeoPackage) Close() error {
-	return g.pool.Close()
+	if g == nil || g.pool == nil {
+		return nil
+	}
+	err := g.pool.Close()
+	if err != nil {
+		return fmt.Errorf("error closing geopackage: %w", err)
+	}
+	g.pool = nil
+	return nil
 }
 
 func (g *GeoPackage) ReverseGeocode(ctx context.Context, l s2.LatLng) ([]string, error) {
